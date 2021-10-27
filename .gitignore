@@ -1,0 +1,6 @@
+# vscode
+.bloop/
+.hitory/
+.metals/
+
+target
