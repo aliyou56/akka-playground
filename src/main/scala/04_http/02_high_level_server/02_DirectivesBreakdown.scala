@@ -1,10 +1,10 @@
 package http.high_level_server
 
 import akka.actor.ActorSystem
+import akka.event.LoggingAdapter
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{ ContentTypes, HttpEntity, HttpRequest, StatusCodes }
 import akka.stream.Materializer
-import akka.event.LoggingAdapter
 
 object DirectivesBreakdown extends App {
 
@@ -84,7 +84,90 @@ object DirectivesBreakdown extends App {
       }
     }
 
+  /**
+   * 3. Composite directives
+   */
+  val simpleNestedRoute =
+    path("api" / "item") {
+      get {
+        complete(StatusCodes.OK)
+      }
+    }
+
+  val compactSimpleNestedRoute = (path("api" / "item") & get) {
+    complete(StatusCodes.OK)
+  }
+
+  val compactExtractRequestRoute =
+    (path("controlEndpoint") & extractRequest & extractLog) { (request, log) =>
+      log.info(s"http request: $request")
+      complete(StatusCodes.OK)
+    }
+
+  // grouping: /about and /aboutUs
+  val repeatedRoute =
+    path("about") {
+      complete(StatusCodes.OK)
+    } ~
+      path("aboutUs") {
+        complete(StatusCodes.OK)
+      }
+
+  val dryRoute =
+    (path("about") | path("aboutUs")) {
+      complete(StatusCodes.OK)
+    }
+
+  // blog.com/42 AND blog.com/postId=42
+  val blogById =
+    path(IntNumber) { blogPostId =>
+      // complex server logic
+      complete(StatusCodes.OK)
+    }
+
+  val blogByQueryParam =
+    parameter(Symbol("postID").as[Int]) { blogPostId =>
+      // Same complex server logic
+      complete(StatusCodes.OK)
+    }
+
+  val combinedBlogById =
+    (path(IntNumber) | parameter(Symbol("postId").as[Int])) { blogPostId =>
+      complete(StatusCodes.OK)
+    }
+
+  /**
+   * 4. "actionnable" directives
+   */
+
+  val completOkRoute = complete(StatusCodes.OK)
+
+  val failedRoute =
+    path("notSupport") {
+      failWith(new RuntimeException("Unsupported")) // completes with HTTP 500
+    }
+
+  val routeWithRejection =
+    path("home") {
+      reject
+    } ~
+      path("index") {
+        completOkRoute
+      }
+
+  /** Exercise */
+
+  val getOrPath =
+    path("api" / "endpoint") {
+      get {
+        completOkRoute
+      } ~
+        post {
+          complete(StatusCodes.Forbidden)
+        }
+    }
+
   Http()
     .newServerAt("localhost", 8080)
-    .bindFlow(complexRoute)
+    .bindFlow(getOrPath)
 }
