@@ -1,9 +1,17 @@
 package http.high_level_server
 
+import scala.concurrent.duration._
+
 import akka.actor.{ Actor, ActorLogging, ActorSystem, Props }
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.stream.Materializer
+import akka.pattern.ask
+import akka.util.Timeout
+import spray.json._
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.StatusCodes
 
 final case class Player(nickname: String, characterClass: String, level: Int)
 
@@ -46,16 +54,25 @@ final class GameAreaMap extends Actor with ActorLogging {
   }
 }
 
-object MarshallingJson extends App {
+trait PlayerJsonProtocol extends DefaultJsonProtocol {
+  implicit val playerFormat = jsonFormat3(Player)
+}
+
+// format: off
+object MarshallingJson extends App 
+  with PlayerJsonProtocol 
+  with SprayJsonSupport {
+// format: on
 
   implicit val system       = ActorSystem("MarshallingJson")
   implicit val materializer = Materializer(system)
+  import system.dispatcher
 
   import GameAreaMap._
 
   val gameMap = system.actorOf(Props[GameAreaMap](), "GameAreaMap")
   val players = List(
-    Player("martin", "warrior", 70),
+    Player("martin", "Warrior", 70),
     Player("roland007", "Elf", 67),
     Player("daniel_rock03", "wizard", 30)
   )
@@ -71,23 +88,40 @@ object MarshallingJson extends App {
    * - DELETE /api/player with JSON payload, removes the player from the map
    */
 
+  implicit val timeout = Timeout(2.seconds)
+
   val serviceRoute: Route =
     pathPrefix("api" / "player") {
       get {
         path("class" / Segment) { characterClass =>
-          reject
+          complete(
+            (gameMap ? GetPlayerByClass(characterClass)).mapTo[List[Player]]
+          )
         } ~
           (path(Segment) | parameter(Symbol("nickname"))) { nickname =>
-            reject
+            val playerOptFuture = (gameMap ? GetPlayer(nickname)).mapTo[Option[Player]]
+            complete(playerOptFuture)
           } ~
           pathEndOrSingleSlash {
-            reject
+            complete((gameMap ? GetAllPlayers).mapTo[List[Player]])
           }
       } ~
         post {
-          reject
-        } ~ delete {
-          reject
+          entity(as[Player]) { player =>
+            complete(
+              (gameMap ? AddPlayer(player)).map(_ => StatusCodes.OK)
+            )
+          }
+        } ~ (delete & pathEndOrSingleSlash) {
+          entity(as[Player]) { player =>
+            complete(
+              (gameMap ? RemovePlayer(player)).map(_ => StatusCodes.OK)
+            )
+          }
         }
     }
+
+  Http()
+    .newServerAt("localhost", 8080)
+    .bindFlow(serviceRoute)
 }
