@@ -1,0 +1,9 @@
+{
+  "creditCard": {
+    "serialNumber": "4242-4242-4242-4242",
+    "securityCode": "123",
+    "account": "ml-70-dg-12"
+  },
+  "receiverAccount": "ml-85-gt-78",
+  "amount": 99
+}
